@@ -1022,7 +1022,7 @@ Sin embargo, **utilizar una versión vulnerable de PHP no significa necesariamen
 
 Como observamos durante las pruebas, conseguir ejecución remota de comandos requiere que se cumplan determinadas condiciones técnicas.
 
-##### Condiciones necesarias para reproducir la explotación
+### Condiciones necesarias para reproducir la explotación
 
 En el caso de PHP2Shell y de las herramientas utilizadas en este laboratorio, podemos identificar varios factores relevantes:
 
@@ -1036,7 +1036,7 @@ En el caso de PHP2Shell y de las herramientas utilizadas en este laboratorio, po
 
 Estas condiciones permiten comprender por qué existe una diferencia importante entre **identificar una versión vulnerable, provocar un fallo de memoria y conseguir ejecutar comandos remotamente**.
 
-##### Una misma versión de PHP no garantiza el mismo resultado
+### Una misma versión de PHP no garantiza el mismo resultado
 
 El laboratorio original de RedSideSecurity proporciona entornos preparados con distintas versiones de PHP y documenta resultados exitosos de ejecución remota en determinadas compilaciones.
 
@@ -1070,7 +1070,7 @@ Por lo tanto, no podemos afirmar que esa implementación sea segura ni que la vu
 
 Esta distinción es fundamental al interpretar resultados de herramientas de seguridad.
 
-##### La actualización es necesaria, pero no suficiente
+### La actualización es necesaria, pero no suficiente
 
 La principal medida para corregir PHP2Shell consiste en actualizar PHP a una versión que incorpore los parches de seguridad.
 
@@ -1162,7 +1162,7 @@ No obstante, estos comportamientos no demuestran por sí mismos que haya ocurrid
 
 Su interpretación requiere correlacionar diferentes fuentes de información.
 
-##### Conclusión general del laboratorio
+### Conclusión general del laboratorio
 
 PHP2Shell nos permitió estudiar un escenario en el que una vulnerabilidad presente en el propio intérprete puede comprometer una aplicación web, incluso cuando el problema no se encuentra en el código desarrollado por sus responsables.
 
