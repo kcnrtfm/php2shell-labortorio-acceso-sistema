@@ -268,7 +268,7 @@ El parámetro `-d` inicia el contenedor en segundo plano.
 
 El parámetro `--name` asigna el nombre `php2shell-8.3`.
 
-La opción `-p 8083:80` publica el puerto 80 del contenedor en el puerto 8083 de la interfaz local del anfitrión.
+La opción `-p 8083:80` publica el puerto 80 del contenedor en el puerto 8083 de todas las interfaces de red del anfitrión.
 
 El servidor queda accesible desde:
 
