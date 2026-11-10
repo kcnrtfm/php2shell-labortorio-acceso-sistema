@@ -133,6 +133,69 @@ También permite comprender por qué identificar una versión vulnerable, detect
 
 Referencia de las herramientas y del laboratorio original: [RedSideSecurity/php2shell](https://github.com/RedSideSecurity/php2shell).
 
+## Herramientas de RedSide Security para analizar PHP2Shell
+
+### Presentación del proyecto
+
+El equipo de **RedSide Security** desarrolló un conjunto de herramientas para estudiar, detectar y comprobar la explotación de las vulnerabilidades PHP2Shell (CVE-2026-109618 y CVE-2026-109619).
+
+El proyecto se encuentra disponible públicamente en GitHub:
+
+https://github.com/RedSideSecurity/php2shell
+
+Su propósito es proporcionar un entorno de experimentación que permita comprender cómo se manifiestan estas vulnerabilidades y bajo qué condiciones pueden aprovecharse para conseguir ejecución remota de comandos (RCE).
+
+A diferencia de una demostración preparada para garantizar un resultado exitoso, el proyecto busca reproducir condiciones similares a las de un servidor real. Para ello, evita utilizar archivos previamente preparados, directorios compartidos con el sistema anfitrión o vulnerabilidades adicionales que faciliten artificialmente la explotación.
+
+### ¿Qué incluye el repositorio?
+
+El proyecto organiza sus herramientas en tres componentes principales.
+
+**1. Laboratorio de servidores PHP**
+
+Proporciona cuatro entornos basados en Apache y distintas versiones de PHP:
+
+| Versión | Resultado documentado por el autor |
+|---|---|
+| PHP 8.2.34 | Vulnerabilidad detectada, sin RCE mediante la técnica utilizada |
+| PHP 8.3.35 | RCE confirmada |
+| PHP 8.4.26 | RCE confirmada |
+| PHP 8.5.11 | RCE confirmada |
+
+Estos entornos permiten observar cómo una misma técnica puede producir resultados diferentes según la versión y las condiciones de ejecución.
+
+**2. Herramientas de detección**
+
+Incluye un escáner denominado `p2s_scan.py`, diseñado para identificar indicios de vulnerabilidad mediante solicitudes HTTP especialmente construidas.
+
+El escáner analiza las respuestas del servidor y clasifica los resultados según las evidencias obtenidas.
+
+Su objetivo es determinar si existen señales compatibles con la vulnerabilidad, sin intentar ejecutar comandos en el sistema.
+
+**3. Herramientas de explotación y verificación**
+
+El repositorio incluye herramientas para comprobar si las condiciones detectadas pueden aprovecharse para ejecutar comandos.
+
+Entre ellas se encuentra `p2s.py`, que automatiza diferentes etapas del procedimiento, como la identificación de la versión de PHP, la selección de offsets de memoria y la comprobación de ejecución.
+
+También proporciona herramientas para trabajar con compilaciones específicas de PHP y analizar los parámetros necesarios para reproducir el ataque.
+
+### ¿Qué diferencia a este laboratorio?
+
+Uno de los aspectos más importantes del proyecto es que distingue entre tres resultados:
+
+- **Detección:** identificar indicios compatibles con una versión vulnerable de PHP.
+- **Verificación:** comprobar si es posible ejecutar una operación mediante la vulnerabilidad.
+- **Explotación:** demostrar que el atacante puede ejecutar comandos y obtener resultados del sistema comprometido.
+
+Esta distinción resulta fundamental para interpretar correctamente las pruebas.
+
+Un servidor puede utilizar una versión vulnerable de PHP y, sin embargo, no permitir que una prueba de concepto concreta consiga ejecutar comandos.
+
+Esto no demuestra que el servidor sea invulnerable. Significa que la explotación no pudo confirmarse bajo las condiciones utilizadas.
+
+Por esa razón, las herramientas de RedSide Security resultan útiles tanto para reproducir ataques exitosos como para investigar las causas de una explotación fallida.
+
 ## Laboratorio 1 — WordPress con PHP 8.3.33
 
 ### 1. Contexto y elección de la imagen
