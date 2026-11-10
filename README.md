@@ -260,7 +260,7 @@ Una vez construida la imagen, iniciamos el servidor:
 ```bash
 docker run -d \
   --name php2shell-8.3 \
-  -p 127.0.0.1:8083:80 \
+  -p 8083:80 \
   php2shell-lab:8.3
 ```
 
@@ -268,7 +268,7 @@ El parámetro `-d` inicia el contenedor en segundo plano.
 
 El parámetro `--name` asigna el nombre `php2shell-8.3`.
 
-La opción `-p 127.0.0.1:8083:80` publica el puerto 80 del contenedor en el puerto 8083 de la interfaz local del anfitrión.
+La opción `-p 8083:80` publica el puerto 80 del contenedor en el puerto 8083 de la interfaz local del anfitrión.
 
 El servidor queda accesible desde:
 
@@ -1109,7 +1109,7 @@ wordpress@sha256:65919a9ca10940feb10d9400fead0d639bf86241f47c91e2b9ea4703aa8452c
 
 Archivo de este repositorio: [`compose-wordpress-php8.3.33.yaml`](compose-wordpress-php8.3.33.yaml).
 
-Incluye WordPress/Apache y MariaDB. No declara volúmenes en Compose; esto no excluye los volúmenes anónimos que puedan declarar las propias imágenes. El puerto HTTP se publica solamente en la interfaz local, `127.0.0.1:8080`.
+Incluye WordPress/Apache y MariaDB. No declara volúmenes en Compose; esto no excluye los volúmenes anónimos que puedan declarar las propias imágenes. El puerto HTTP se publica solamente en la interfaz local, `8080`.
 
 Desde el directorio del repositorio:
 
@@ -1117,14 +1117,14 @@ Desde el directorio del repositorio:
 docker compose -f compose-wordpress-php8.3.33.yaml up -d
 ```
 
-Acceso HTTP: `http://127.0.0.1:8080/`.
+Acceso HTTP: `http://192.168.18.68:8080/`.
 
 ### Prueba de detección
 
 Se utilizó el escáner del proyecto original, ejecutado desde su directorio:
 
 ```bash
-python3 scanner/p2s_scan.py -u http://127.0.0.1:8080/
+python3 scanner/p2s_scan.py -u http://192.168.18.68:8080/
 ```
 
 **Salida obtenida:**
@@ -1132,7 +1132,7 @@ python3 scanner/p2s_scan.py -u http://127.0.0.1:8080/
 ```text
 [*] 1 target(s), 5 thread(s)
 
-POTENTIAL  http://127.0.0.1:8080/index.php [PHP/8.3.33]
+POTENTIAL  http:/192.168.18.68:8080/index.php [PHP/8.3.33]
            no crash seen; banner reports unpatched PHP/8.3.33 (verify manually)
 
 VULNERABLE: 0  POTENTIAL: 1  SAFE: 0  UNKNOWN: 0  ERROR: 0
@@ -1145,7 +1145,7 @@ VULNERABLE: 0  POTENTIAL: 1  SAFE: 0  UNKNOWN: 0  ERROR: 0
 Se ejecutó el controlador del proyecto original con `--no-poc`, que intenta comprobar ejecución mediante un retraso temporal, sin generar el archivo de demostración de lectura HTTP:
 
 ```bash
-python3 p2s.py -u http://127.0.0.1:8080/ --no-poc
+python3 p2s.py -u http://192.168.18.68:8080/ --no-poc
 ```
 
 **Salida obtenida:**
