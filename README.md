@@ -196,6 +196,29 @@ Esto no demuestra que el servidor sea invulnerable. Significa que la explotació
 
 Por esa razón, las herramientas de RedSide Security resultan útiles tanto para reproducir ataques exitosos como para investigar las causas de una explotación fallida.
 
+### Entorno de trabajo y obtención de las herramientas
+
+Las pruebas se realizan en un sistema GNU/Linux virtualizado. El entorno utilizado tiene las siguientes características:
+
+| Componente | Configuración |
+|---|---|
+| Sistema operativo | Debian GNU/Linux 12 (Bookworm) |
+| Kernel | Linux 6.1.0-54-amd64 |
+| Arquitectura | x86_64 |
+| Virtualización | KVM |
+| CPU | 2 vCPU |
+| Memoria RAM | 1,9 GiB |
+| Disco | 19 GB, 11 GB disponibles |
+| Docker | 20.10.24+dfsg1 |
+| Docker Compose | v5.6.0 |
+
+Para obtener las herramientas de RedSide Security, se clona el repositorio original y se ingresa a su directorio:
+
+```bash
+git clone https://github.com/RedSideSecurity/php2shell.git
+cd php2shell
+```
+
 ## Laboratorio 1 — WordPress con PHP 8.3.33
 
 ### 1. Contexto y elección de la imagen
