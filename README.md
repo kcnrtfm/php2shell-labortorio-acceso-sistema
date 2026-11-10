@@ -412,7 +412,195 @@ No obstante, todavía no sabemos si podemos provocar el comportamiento vulnerabl
 
 Estas comprobaciones constituyen una etapa inicial de reconocimiento. La detección de la vulnerabilidad y la verificación de su posible explotación requieren pruebas adicionales.
 
+#### Detección de PHP2Shell mediante el escáner de RedSideSecurity
 
+Una vez realizadas las primeras verificaciones del servidor, vamos a utilizar el escáner desarrollado por RedSideSecurity para comprobar si nuestra instalación de PHP presenta el comportamiento asociado a PHP2Shell.
+
+El objetivo de esta prueba es detectar el agotamiento de memoria durante el procesamiento de solicitudes HTTP `multipart/form-data`.
+
+Esta comprobación no implica ejecutar comandos en el servidor. El escáner busca identificar una condición que puede indicar la presencia de la vulnerabilidad.
+
+##### Ejecución del escáner
+
+Desde el directorio del repositorio original de RedSideSecurity, ejecutamos:
+
+```
+python3 scanner/p2s_scan.py -u http://192.168.18.68:8083/
+```
+
+El parámetro `-u` indica la dirección del servidor que queremos analizar.
+
+En nuestro laboratorio obtuvimos la siguiente respuesta:
+
+```
+[*] 1 target(s), 5 thread(s)
+
+VULNERABLE http://192.168.18.68:8083/index.php [PHP/8.3.35]
+           probe 1 (1 MiB): PHP out-of-memory in 'Unknown' while parsing multipart
+
+VULNERABLE: 1  POTENTIAL: 0  SAFE: 0  UNKNOWN: 0  ERROR: 0
+```
+
+El escáner identificó PHP 8.3.35 y clasificó el objetivo como `VULNERABLE`.
+
+El mensaje `PHP out-of-memory in 'Unknown' while parsing multipart` indica que el servidor agotó la memoria disponible durante el procesamiento de una solicitud multipart.
+
+##### ¿Cómo funciona técnicamente el escáner?
+
+Para comprender el resultado, es importante analizar qué operaciones realiza `p2s_scan.py`.
+
+**Identificación del servidor**
+
+El programa establece una comunicación HTTP con el objetivo y examina sus respuestas.
+
+Entre otros datos, utiliza la cabecera `X-Powered-By` para identificar la versión de PHP cuando el servidor proporciona esa información.
+
+En nuestro caso:
+
+```
+X-Powered-By: PHP/8.3.35
+```
+
+Esta información permite asociar el resultado con la versión del intérprete utilizada en el laboratorio.
+
+**Construcción de solicitudes multipart**
+
+El escáner genera solicitudes HTTP `POST` con contenido de tipo `multipart/form-data`.
+
+Este formato es utilizado habitualmente por aplicaciones web para transmitir formularios y archivos.
+
+Sin embargo, en lugar de construir un formulario convencional, la herramienta genera campos cuyos nombres contienen numerosos niveles de anidamiento.
+
+Una estructura representativa sería:
+
+```
+a[][a][a][a][a][a][a][a]
+```
+
+Durante el procesamiento de estos nombres, PHP interpreta los corchetes para construir estructuras de datos internas.
+
+El escáner incrementa la complejidad y el volumen de estas estructuras para provocar el comportamiento que intenta detectar.
+
+En el código de la herramienta se definen distintas pruebas que combinan tamaños de solicitud y cantidades de campos.
+
+La primera utiliza aproximadamente 1 MiB de contenido.
+
+**Detección del agotamiento de memoria**
+
+El escáner analiza las respuestas HTTP buscando mensajes característicos de un error de memoria de PHP.
+
+Entre ellos:
+
+```
+Allowed memory size of
+bytes exhausted
+Unknown
+```
+
+La combinación de estos elementos permite identificar un error producido durante el procesamiento interno de la solicitud, sin una referencia a una línea del código de la aplicación.
+
+Cuando encuentra ese comportamiento, la herramienta clasifica el objetivo como `VULNERABLE`.
+
+##### Interpretación del resultado
+
+En nuestro caso, la prueba produjo:
+
+```
+VULNERABLE http://192.168.18.68:8083/index.php [PHP/8.3.35]
+           probe 1 (1 MiB): PHP out-of-memory in 'Unknown' while parsing multipart
+```
+
+Podemos identificar tres datos importantes:
+
+- **PHP 8.3.35:** versión detectada en el servidor.
+- `**probe 1 (1 MiB)**`**:** primera prueba del escáner, con una solicitud de aproximadamente 1 MiB.
+- `**PHP out-of-memory in 'Unknown'**`**:** error de agotamiento de memoria detectado durante el procesamiento multipart.
+
+La clasificación `VULNERABLE` corresponde al criterio de detección implementado por RedSideSecurity.
+
+Esto no significa que el escáner haya ejecutado código arbitrario en el servidor.
+
+La prueba demuestra que el intérprete presenta el comportamiento de memoria que la herramienta utiliza como indicador de vulnerabilidad.
+
+##### Conclusión de la prueba
+
+El escáner permitió identificar el comportamiento asociado a PHP2Shell sobre nuestra instalación de PHP 8.3.35.
+
+La prueba también demuestra que podemos realizar una primera evaluación del servidor utilizando únicamente solicitudes HTTP, sin acceder al sistema operativo ni inspeccionar directamente el contenedor.
+
+En la siguiente sección vamos a observar estas mismas solicitudes desde el servidor para comprender qué recibe PHP y cómo responde cuando se produce el error.
+
+
+
+#### Monitoreo del tráfico HTTP desde el servidor
+
+Para complementar la prueba del escáner, podemos utilizar `tcpdump` desde el sistema operativo anfitrión. Esto permite observar las solicitudes HTTP que llegan al contenedor y las respuestas que genera Apache/PHP.
+
+En Debian instalamos la herramienta:
+
+```bash
+sudo apt update
+sudo apt install tcpdump
+```
+
+Iniciamos la captura sobre el puerto 8083:
+
+```bash
+sudo tcpdump -i any -nn -s 0 -A 'tcp port 8083'
+```
+
+Mientras mantenemos la captura activa, ejecutamos nuevamente `p2s_scan.py` desde el equipo cliente.
+
+##### Análisis de la solicitud HTTP
+
+En el tráfico capturado encontramos el siguiente fragmento del formulario multipart:
+
+```text
+Content-Disposition:name=a[][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a][a];filename=
+```
+
+La cabecera `Content-Disposition` identifica un campo del formulario enviado al servidor.
+
+El nombre comienza con `a[]` y continúa con numerosos niveles de anidamiento `[a]`. Esta estructura es generada deliberadamente por el escáner para provocar operaciones de asignación de memoria durante el procesamiento de los campos multipart.
+
+**Lo importante es que estas estructuras son interpretadas por PHP durante el procesamiento de la solicitud HTTP**, antes de que la aplicación ejecute su propia lógica.
+
+##### Análisis de la respuesta HTTP
+
+En la misma captura encontramos la respuesta del servidor:
+
+```http
+Date: Tue, 10 Nov 2026 18:51:01 GMT
+Server: Apache/2.4.69 (Debian)
+X-Powered-By: PHP/8.3.35
+Vary: Accept-Encoding
+Content-Length: 147
+Connection: close
+Content-Type: text/html; charset=UTF-8
+
+<br />
+<b>Fatal error</b>:  Allowed memory size of 8388608 bytes exhausted (tried to allocate 4096 bytes) in <b>Unknown</b> on line <b>0</b><br />
+```
+
+Esta respuesta permite observar directamente el error que detectó el escáner.
+
+El mensaje informa que:
+
+- **`8388608 bytes`**: PHP agotó su límite de memoria de 8 MiB, definido mediante `memory_limit`.
+- **`tried to allocate 4096 bytes`**: el error se produjo cuando PHP intentó reservar otros 4096 bytes (4 KiB).
+- **`in Unknown on line 0`**: PHP no asocia el error con una línea de código de la aplicación, lo que resulta compatible con un fallo durante el procesamiento interno de la solicitud.
+
+El escáner busca precisamente los fragmentos `Allowed memory size of`, `bytes exhausted` y `Unknown` para clasificar este comportamiento como `VULNERABLE`.
+
+##### ¿Qué demuestra la captura?
+
+La captura permite relacionar las dos partes del experimento: una solicitud multipart especialmente construida y la respuesta de agotamiento de memoria generada por PHP.
+
+De esta manera, podemos comprender **qué comportamiento observa el escáner para producir su diagnóstico**, en lugar de limitarnos a interpretar su resultado final.
+
+Esto confirma la condición de agotamiento de memoria utilizada como indicador de vulnerabilidad, pero todavía no demuestra ejecución remota de comandos.
+
+Los paquetes TCP posteriores con indicadores `FIN` muestran el cierre de la conexión entre `192.168.18.68:8083` y `192.168.18.28:40918`. Este cierre no constituye por sí mismo una prueba de explotación.
 
 #### Verificación de ejecución remota de comandos (RCE)
 
