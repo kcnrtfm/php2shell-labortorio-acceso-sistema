@@ -1,6 +1,135 @@
-# Laboratorio PHP2Shell — acceso al sistema
+# PHP2Shell — análisis y laboratorio de acceso al sistema
 
-Laboratorio de experimentación con **PHP2Shell (CVE-2026-109618 / CVE-2026-109619)** en aplicaciones PHP desplegadas en contenedores. Las pruebas se realizan sobre servicios locales y buscan diferenciar la detección de una versión afectada de la confirmación efectiva de ejecución remota de comandos (RCE).
+## Introducción a PHP2Shell
+
+### ¿Qué es PHP2Shell?
+
+PHP2Shell es el nombre utilizado para identificar un conjunto de dos vulnerabilidades críticas de seguridad que afectan al intérprete de PHP. Fueron divulgadas públicamente el 21 de octubre de 2026 y se identifican como:
+
+- **CVE-2026-109618:** corrupción de memoria durante el tratamiento de errores por agotamiento de memoria (*Out of Memory*, OOM).
+- **CVE-2026-109619:** utilización de referencias a memoria que ya fue liberada, debido a la persistencia incorrecta de estados internos (*Use After Free*, UAF).
+
+Ambas vulnerabilidades pueden permitir que un atacante ejecute código arbitrario en un servidor que utiliza una versión afectada de PHP, incluso sin disponer de credenciales de acceso.
+
+Este tipo de vulnerabilidad se conoce como **Remote Code Execution (RCE)** o ejecución remota de código.
+
+Su particularidad es que el problema no se encuentra necesariamente en el código de una aplicación web, sino en el propio intérprete de PHP.
+
+Por lo tanto, aplicaciones desarrolladas con PHP, como WordPress, Drupal o Joomla, pueden quedar expuestas aunque su código no contenga la vulnerabilidad.
+
+### ¿Cómo funciona PHP2Shell?
+
+Para comprender el ataque, primero debemos considerar cómo funciona PHP cuando recibe una solicitud HTTP.
+
+Cuando un cliente realiza una petición a una aplicación web, el servidor utiliza PHP para procesar los datos recibidos, ejecutar la lógica correspondiente y generar una respuesta.
+
+Durante este proceso, PHP reserva memoria para almacenar variables, estructuras internas y datos de la solicitud. Una vez finalizado el procesamiento, debe liberar los recursos utilizados.
+
+PHP2Shell aprovecha errores en la administración de esa memoria.
+
+#### CVE-2026-109618: corrupción de memoria
+
+Esta vulnerabilidad está relacionada con el tratamiento de errores cuando PHP agota la memoria disponible.
+
+Normalmente, cuando una operación requiere más memoria de la permitida, PHP interrumpe su ejecución y comienza a liberar los recursos utilizados.
+
+Sin embargo, en determinadas circunstancias, el error puede producirse mientras PHP todavía está inicializando estructuras internas.
+
+Como consecuencia, algunas estructuras quedan incompletas. Posteriormente, durante las operaciones de limpieza, PHP puede intentar utilizarlas como si fueran válidas.
+
+Esto puede provocar corrupción de memoria.
+
+Un atacante que consiga controlar las condiciones que producen este comportamiento podría manipular estructuras internas del intérprete y, bajo determinadas condiciones, desviar su ejecución.
+
+#### CVE-2026-109619: uso de memoria liberada
+
+La segunda vulnerabilidad está relacionada con el estado interno que PHP mantiene durante el procesamiento de las solicitudes.
+
+Algunas estructuras globales pueden conservar referencias a regiones de memoria pertenecientes a una solicitud anterior.
+
+El problema aparece cuando esa memoria ya fue liberada, pero las referencias continúan existiendo.
+
+Si una solicitud posterior utiliza esas referencias antes de que sean inicializadas correctamente, PHP puede acceder a memoria que ya no le pertenece.
+
+Este comportamiento se conoce como *Use After Free* (UAF).
+
+En determinadas condiciones, un atacante puede aprovecharlo para alterar el funcionamiento del intérprete y conseguir ejecución de código.
+
+### ¿Cómo puede explotarse remotamente?
+
+El ataque comienza cuando un cliente envía una solicitud HTTP especialmente construida a un servidor que utiliza una versión vulnerable de PHP.
+
+La solicitud puede utilizar el formato `multipart/form-data`, empleado habitualmente para enviar formularios y archivos. PHP procesa estos datos antes de que la aplicación ejecute su propia lógica.
+
+Durante ese procesamiento, el intérprete reserva memoria para almacenar los datos recibidos y las estructuras internas necesarias para administrarlos.
+
+**El ataque busca provocar una situación anómala durante la administración de esa memoria.**
+
+En determinadas condiciones, PHP puede liberar una región de memoria mientras todavía conserva referencias a ella. Esto produce una situación conocida como *Use After Free* (UAF), donde el programa intenta utilizar memoria que ya fue liberada.
+
+El problema es que esa región puede haber sido reutilizada para almacenar otros datos. Si el intérprete continúa utilizando las referencias anteriores, puede interpretar el contenido de esa memoria como si todavía perteneciera a la estructura original.
+
+**Aquí aparece la posibilidad de explotación.**
+
+Un atacante que consiga influir sobre el contenido de esa región podría hacer que PHP interprete datos manipulados como estructuras internas válidas.
+
+En el caso de PHP2Shell, la explotación busca manipular una estructura denominada `HashTable`, utilizada internamente por PHP para administrar arrays, y alterar una referencia a una función que se ejecuta durante la destrucción de esa estructura.
+
+Si el procedimiento tiene éxito, el intérprete termina invocando una función distinta de la prevista, lo que puede permitir la ejecución de comandos del sistema operativo.
+
+Esta situación se conoce como *Remote Code Execution* (RCE).
+
+Sin embargo, **existe una diferencia entre provocar la vulnerabilidad y conseguir explotarla**.
+
+El atacante necesita controlar con suficiente precisión la disposición y el contenido de la memoria. Si no lo consigue, el proceso puede finalizar inesperadamente o simplemente no producir el resultado buscado.
+
+Por eso, una instalación que utiliza una versión vulnerable de PHP no necesariamente puede explotarse mediante cualquier prueba de concepto disponible. La explotación también depende de las condiciones concretas del entorno y de la capacidad del ataque para manipular las estructuras internas del intérprete.
+
+### ¿Qué puede conseguir un atacante?
+
+Si la explotación tiene éxito, el atacante puede ejecutar código dentro del contexto del proceso PHP comprometido.
+
+Esto puede permitir:
+
+- Ejecutar comandos del sistema operativo con los permisos del proceso PHP.
+- Leer archivos accesibles para ese proceso.
+- Acceder a información de configuración y credenciales de aplicaciones.
+- Modificar archivos sobre los que el proceso tenga permisos de escritura.
+- Interactuar con otros servicios a los que el proceso pueda acceder.
+- Interrumpir el funcionamiento del servicio.
+
+El alcance de una explotación depende de los permisos del usuario que ejecuta PHP y de las restricciones existentes en el sistema operativo.
+
+Por ejemplo, en un servidor Apache sobre GNU/Linux, el proceso puede ejecutarse con un usuario de servicio como `www-data`.
+
+Conseguir ejecutar comandos como `www-data` no significa obtener automáticamente permisos de administrador o `root`.
+
+### Versiones afectadas
+
+Las vulnerabilidades fueron corregidas el 21 de octubre de 2026 mediante actualizaciones de seguridad de PHP.
+
+| Rama PHP | Primera versión corregida |
+| -------- | ------------------------- |
+| PHP 8.2  | 8.2.35                    |
+| PHP 8.3  | 8.3.36                    |
+| PHP 8.4  | 8.4.27                    |
+| PHP 8.5  | 8.5.12                    |
+
+Las versiones anteriores también pueden estar afectadas. Las ramas que ya finalizaron su ciclo de soporte no recibieron necesariamente una actualización correctiva.
+
+En distribuciones GNU/Linux, además, debe considerarse que los mantenedores pueden incorporar correcciones de seguridad sin modificar el número principal de versión del paquete.
+
+Por ese motivo, la versión anunciada por un servidor es un indicador útil, pero no siempre resulta suficiente para determinar su estado de seguridad.
+
+### ¿Por qué es importante esta vulnerabilidad?
+
+PHP2Shell permite estudiar una categoría de vulnerabilidades que resulta especialmente relevante en la seguridad de aplicaciones web: los errores de administración de memoria dentro de los componentes que ejecutan las aplicaciones.
+
+A diferencia de vulnerabilidades como SQL Injection o Cross-Site Scripting (XSS), donde el problema suele encontrarse en la forma en que una aplicación procesa determinados datos, PHP2Shell afecta al funcionamiento interno del intérprete.
+
+Esto introduce una distinción fundamental: **una aplicación puede estar correctamente desarrollada y, aun así, encontrarse expuesta por una vulnerabilidad en uno de sus componentes subyacentes**.
+
+También permite comprender por qué identificar una versión vulnerable, detectar un comportamiento anómalo y conseguir ejecutar código son resultados diferentes que deben comprobarse de manera independiente.
 
 Referencia de las herramientas y del laboratorio original: [RedSideSecurity/php2shell](https://github.com/RedSideSecurity/php2shell).
 
