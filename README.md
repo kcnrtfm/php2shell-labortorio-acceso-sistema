@@ -41,14 +41,6 @@ docker compose -f compose-wordpress-php8.3.33.yaml up -d
 
 Acceso HTTP: `http://127.0.0.1:8080/`.
 
-Para comprobar los contenedores:
-
-```bash
-docker compose -f compose-wordpress-php8.3.33.yaml ps
-```
-
-En esta experiencia, las herramientas identificaron la versión de PHP por la cabecera `X-Powered-By: PHP/8.3.33`. No se documentó una comprobación adicional de la compilación dentro del contenedor.
-
 ### 3. Prueba de detección
 
 Se utilizó el escáner del proyecto original, ejecutado desde su directorio:
