@@ -115,3 +115,17 @@ Los offsets dependen de la **compilación concreta** de `libphp.so`, no solo de 
 - [Laboratorio y herramientas originales — RedSideSecurity/php2shell](https://github.com/RedSideSecurity/php2shell)
 - [README del proyecto original](https://github.com/RedSideSecurity/php2shell/blob/main/README.md)
 - [Imagen oficial de WordPress en Docker Hub](https://hub.docker.com/_/wordpress)
+
+## Líneas de investigación para intentar la explotación
+
+Las pruebas realizadas no permitieron confirmar RCE. Las siguientes son **hipótesis de trabajo**, no procedimientos ya ejecutados ni soluciones verificadas.
+
+1. **Identificar la compilación exacta de PHP dentro de WordPress.** Contrastar la versión anunciada en `X-Powered-By` con el binario y el módulo Apache realmente cargados. La versión 8.3.33 no identifica por sí sola los offsets necesarios.
+2. **Obtener y analizar los offsets del módulo de este contenedor.** El exploit necesita constantes asociadas a la compilación de `libphp.so`; hasta ahora se probaron offsets de otras compilaciones. Examinar el módulo de la imagen y contrastarlo con las herramientas de `real-vm/` del proyecto original permitiría evaluar esa diferencia.
+3. **Investigar por qué falla la filtración de memoria.** Todas las variantes terminaron en `leak failed`. Conviene distinguir entre un problema de las peticiones que disparan la condición, una disposición de memoria diferente y la ausencia de la señal que espera el exploit. Los registros de Apache/PHP y el comportamiento del proceso durante cada intento podrían aportar evidencia.
+4. **Comparar la configuración de Apache/PHP con la del laboratorio original.** En particular, estudiar el número de procesos trabajadores, el MPM utilizado, `memory_limit` y las opciones de `session.upload_progress`. Cambiar una condición por vez en una copia del despliegue permitiría establecer si influye en la reproducibilidad.
+5. **Separar detección de explotación.** El escáner obtuvo `POTENTIAL` sin observar su señal diferencial. Analizar el comportamiento de la petición multipart en el WordPress desplegado ayudaría a determinar si el mecanismo de detección llega a activarse, independientemente de la cadena RCE.
+6. **Revisar los parámetros de prueba del exploit.** El propio controlador propone ampliar los reintentos o el barrido de `htdata`. Esa posibilidad debe evaluarse después de verificar la compilación y la fase que falla, porque más intentos no corrigen por sí solos offsets incorrectos.
+7. **Comparar contra un objetivo conocido del laboratorio original.** Ejecutar las mismas pruebas en una de las compilaciones donde el autor informa RCE permitiría separar un problema de las herramientas de uno específico del despliegue de WordPress.
+
+**Criterio para avanzar:** registrar cada cambio por separado y comprobar si modifica la clasificación del escáner, la fase de filtración de memoria o la confirmación de ejecución. No considerar explotado el sistema hasta contar con una prueba reproducible de RCE.
