@@ -72,6 +72,8 @@ python3 p2s.py -u http://127.0.0.1:8080/ --no-poc
 
 **Salida obtenida:**
 
+La cabecera HTTP de respuesta `X-Powered-By` puede indicar la tecnología que genera la respuesta. En este caso, `X-Powered-By: PHP/8.3.33` informa la versión de PHP utilizada por el servidor; es el dato que el programa emplea para identificarla, pero no demuestra por sí solo que la instalación sea explotable.
+
 ```text
 [1] fingerprint: X-Powered-By: PHP/8.3.33 -> version=8.3.33
 [2] offsets: 2 candidate build(s); htdata swept +-2 page(s)
