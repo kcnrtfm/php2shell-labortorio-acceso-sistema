@@ -110,13 +110,7 @@ Los offsets dependen de la **compilación concreta** de `libphp.so`, no solo de 
 
 **Estado del laboratorio WordPress:** versión potencialmente afectada identificada; ejecución remota de comandos **no confirmada**.
 
-## Referencias
-
-- [Laboratorio y herramientas originales — RedSideSecurity/php2shell](https://github.com/RedSideSecurity/php2shell)
-- [README del proyecto original](https://github.com/RedSideSecurity/php2shell/blob/main/README.md)
-- [Imagen oficial de WordPress en Docker Hub](https://hub.docker.com/_/wordpress)
-
-## Líneas de investigación para intentar la explotación
+### 6. Líneas de investigación para intentar la explotación
 
 Las pruebas realizadas no permitieron confirmar RCE. Las siguientes son **hipótesis de trabajo**, no procedimientos ya ejecutados ni soluciones verificadas.
 
