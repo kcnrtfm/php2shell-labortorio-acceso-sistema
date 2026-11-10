@@ -276,7 +276,7 @@ El servidor queda accesible desde:
 
 
 
-### Verificación del entorno y primeras pruebas
+#### Verificación del entorno y primeras pruebas
 
 La documentación original de RedSideSecurity propone comprobar la versión de PHP, su configuración, el módulo MPM de Apache y el procesamiento de formularios HTTP. Estas verificaciones permiten garantizar que el entorno reproduce las condiciones previstas por los autores.
 
@@ -284,7 +284,7 @@ En nuestro caso adoptaremos otra perspectiva: **actuaremos como si desconociéra
 
 El objetivo de las pruebas es `http://192.168.18.68:8083/`.
 
-#### 1. Comprobar la disponibilidad del servidor
+##### Comprobar la disponibilidad del servidor
 
 Ejecutamos:
 
@@ -315,7 +315,7 @@ La versión PHP 8.3.35 es anterior a la versión 8.3.36, donde se corrigieron la
 
 Sin embargo, una cabecera HTTP no demuestra que exista una vulnerabilidad explotable.
 
-#### 2. Identificar información del servidor
+##### Identificar información del servidor
 
 Ejecutamos:
 
@@ -345,7 +345,7 @@ La cabecera `Content-Length: 3` indica que el cuerpo contiene tres bytes, corres
 
 **Esta prueba confirma que el servidor responde a solicitudes GET y entrega contenido desde el recurso solicitado.** No permite determinar qué configuración interna utiliza PHP.
 
-#### 3. Comprobar el procesamiento de formularios
+##### Comprobar el procesamiento de formularios
 
 Las vulnerabilidades PHP2Shell están relacionadas con operaciones internas del intérprete durante el procesamiento de solicitudes HTTP.
 
@@ -391,7 +391,7 @@ Esto confirma que el servidor recibió la solicitud y generó una respuesta sati
 
 Tampoco demuestra que exista una vulnerabilidad explotable.
 
-#### 4. Interpretación de los resultados
+##### Interpretación de los resultados
 
 Las tres pruebas proporcionaron información inicial sobre nuestro objetivo:
 
@@ -420,9 +420,9 @@ Estas comprobaciones constituyen una etapa inicial de reconocimiento. La detecci
 
 
 
-## Laboratorio 1 — WordPress con PHP 8.3.33
+## Laboratorio con WordPress y PHP 8.3.33
 
-### 1. Contexto y elección de la imagen
+### Contexto y elección de la imagen
 
 El laboratorio de RedSideSecurity prepara **cuatro objetivos Apache/PHP**, uno por rama (8.2, 8.3, 8.4 y 8.5). Según el README original, las compilaciones utilizadas y sus resultados son:
 
@@ -443,7 +443,7 @@ wordpress@sha256:65919a9ca10940feb10d9400fead0d639bf86241f47c91e2b9ea4703aa8452c
 
 **Distinción importante:** PHP **8.3.33 no es la misma compilación** que PHP 8.3.35, la utilizada por el laboratorio original para esa rama. La coincidencia de rama y el hecho de ser anterior al parche **no implican que los offsets ni el exploit publicado funcionen sin ajustes**.
 
-### 2. Despliegue de WordPress
+### Despliegue de WordPress
 
 Archivo de este repositorio: [`compose-wordpress-php8.3.33.yaml`](compose-wordpress-php8.3.33.yaml).
 
@@ -457,7 +457,7 @@ docker compose -f compose-wordpress-php8.3.33.yaml up -d
 
 Acceso HTTP: `http://127.0.0.1:8080/`.
 
-### 3. Prueba de detección
+### Prueba de detección
 
 Se utilizó el escáner del proyecto original, ejecutado desde su directorio:
 
@@ -478,7 +478,7 @@ VULNERABLE: 0  POTENTIAL: 1  SAFE: 0  UNKNOWN: 0  ERROR: 0
 
 **Interpretación:** el servidor informa una versión de PHP anterior a la corrección. Sin embargo, el escáner **no observó la señal de fallo que busca** (`no crash seen`), por lo que clasificó el objetivo como `POTENTIAL`, **no** como `VULNERABLE`. El resultado no acredita por sí mismo que se pueda ejecutar código remotamente.
 
-### 4. Prueba de RCE sin archivo de prueba
+### Prueba de RCE sin archivo de prueba
 
 Se ejecutó el controlador del proyecto original con `--no-poc`, que intenta comprobar ejecución mediante un retraso temporal, sin generar el archivo de demostración de lectura HTTP:
 
@@ -516,7 +516,7 @@ La cabecera HTTP de respuesta `X-Powered-By` puede indicar la tecnología que ge
 
 Los offsets dependen de la **compilación concreta** de `libphp.so`, no solo de la versión mayor y menor de PHP. El laboratorio original también utiliza una configuración específica de Apache, con un único proceso trabajador para facilitar un estado de memoria predecible. Ambas diferencias podrían influir en el resultado, pero **no se determinó la causa del fallo con estas salidas**.
 
-### 5. Conclusiones de esta primera experiencia
+### Conclusiones de esta primera experiencia
 
 - Se desplegó el objetivo WordPress/Apache con una imagen identificada como **PHP 8.3.33**.
 - El escáner devolvió **`POTENTIAL`**, no `VULNERABLE`.
@@ -526,7 +526,7 @@ Los offsets dependen de la **compilación concreta** de `libphp.so`, no solo de 
 
 **Estado del laboratorio WordPress:** versión potencialmente afectada identificada; ejecución remota de comandos **no confirmada**.
 
-### 6. Líneas de investigación para intentar la explotación
+### Líneas de investigación para intentar la explotación
 
 Las pruebas realizadas no permitieron confirmar RCE. Las siguientes son **hipótesis de trabajo**, no procedimientos ya ejecutados ni soluciones verificadas.
 
