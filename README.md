@@ -211,6 +211,7 @@ Las pruebas se realizan en un sistema GNU/Linux virtualizado. El entorno utiliza
 | Disco | 19 GB, 11 GB disponibles |
 | Docker | 20.10.24+dfsg1 |
 | Docker Compose | v5.6.0 |
+| Dirección IP | 192.168.18.68 |
 
 Para obtener las herramientas de RedSide Security, se clona el repositorio original y se ingresa a su directorio:
 
@@ -218,6 +219,206 @@ Para obtener las herramientas de RedSide Security, se clona el repositorio origi
 git clone https://github.com/RedSideSecurity/php2shell.git
 cd php2shell
 ```
+
+
+
+### Prueba de explotación de PHP2Shell en PHP 8.3.35 (Apache/mod_php)
+
+En esta primera experiencia vamos a utilizar uno de los entornos proporcionados por RedSideSecurity: un servidor Apache con **PHP 8.3.35**, una de las compilaciones donde los autores del proyecto consiguieron confirmar ejecución remota de comandos (RCE).
+
+El objetivo es desplegar el entorno de forma manual, comprender su configuración y utilizar posteriormente las herramientas del repositorio para reproducir las pruebas.
+
+#### Construcción de la imagen Docker
+
+El laboratorio utiliza la imagen oficial `php:8.3.35-apache`, que incluye Apache y PHP mediante `mod_php`.
+
+Su definición se encuentra en el archivo `php-8.3/Dockerfile` del repositorio que clonamos anteriormente.
+
+Además de seleccionar la versión de PHP, el Dockerfile incorpora archivos de configuración específicos para el laboratorio:
+
+- **`php2shell.ini`:** establece parámetros de PHP, como el límite de memoria de 8 MB y el procesamiento de formularios y archivos.
+- **`apache.conf`:** configura Apache con un único proceso trabajador, buscando un comportamiento de memoria más predecible durante las pruebas.
+- **`index.php`:** proporciona una respuesta HTTP sencilla para comprobar el funcionamiento del servidor.
+- **`info.php`:** permite consultar la versión de PHP, la interfaz de ejecución (SAPI) y parámetros relevantes de configuración.
+
+El directorio web `/var/www/html` queda bajo la propiedad del usuario `www-data`.
+
+#### Construir el contenedor
+
+Desde el directorio raíz del repositorio original, construimos la imagen:
+
+```bash
+docker build -t php2shell-lab:8.3 php-8.3
+```
+
+El comando utiliza el Dockerfile ubicado en `php-8.3` y genera una imagen local denominada `php2shell-lab:8.3`.
+
+#### Iniciar el contenedor
+
+Una vez construida la imagen, iniciamos el servidor:
+
+```bash
+docker run -d \
+  --name php2shell-8.3 \
+  -p 127.0.0.1:8083:80 \
+  php2shell-lab:8.3
+```
+
+El parámetro `-d` inicia el contenedor en segundo plano.
+
+El parámetro `--name` asigna el nombre `php2shell-8.3`.
+
+La opción `-p 127.0.0.1:8083:80` publica el puerto 80 del contenedor en el puerto 8083 de la interfaz local del anfitrión.
+
+El servidor queda accesible desde:
+
+`http://192.168.18.68:8083/`
+
+
+
+### Verificación del entorno y primeras pruebas
+
+La documentación original de RedSideSecurity propone comprobar la versión de PHP, su configuración, el módulo MPM de Apache y el procesamiento de formularios HTTP. Estas verificaciones permiten garantizar que el entorno reproduce las condiciones previstas por los autores.
+
+En nuestro caso adoptaremos otra perspectiva: **actuaremos como si desconociéramos la configuración interna del servidor**, utilizando únicamente la información que podamos obtener mediante solicitudes HTTP.
+
+El objetivo de las pruebas es `http://192.168.18.68:8083/`.
+
+#### 1. Comprobar la disponibilidad del servidor
+
+Ejecutamos:
+
+```bash
+curl -I http://192.168.18.68:8083
+```
+
+**Salida obtenida:**
+
+```http
+HTTP/1.1 200 OK
+Date: Tue, 10 Nov 2026 18:29:47 GMT
+Server: Apache/2.4.69 (Debian)
+X-Powered-By: PHP/8.3.35
+Connection: close
+Content-Type: text/html; charset=UTF-8
+```
+
+El servidor responde con `200 OK`, lo que confirma que el servicio HTTP está disponible.
+
+Las cabeceras también proporcionan información relevante:
+
+- `Server`: identifica el software anunciado por el servidor web, Apache 2.4.69 sobre Debian.
+- `X-Powered-By`: informa que el servidor utiliza PHP 8.3.35.
+- `Connection: close`: indica que la conexión se cerrará después de la respuesta.
+
+La versión PHP 8.3.35 es anterior a la versión 8.3.36, donde se corrigieron las vulnerabilidades estudiadas. Por lo tanto, **tenemos un primer indicio de que el servidor podría ser vulnerable**.
+
+Sin embargo, una cabecera HTTP no demuestra que exista una vulnerabilidad explotable.
+
+#### 2. Identificar información del servidor
+
+Ejecutamos:
+
+```bash
+curl -i http://192.168.18.68:8083
+```
+
+**Salida obtenida:**
+
+```http
+HTTP/1.1 200 OK
+Date: Tue, 10 Nov 2026 18:30:04 GMT
+Server: Apache/2.4.69 (Debian)
+X-Powered-By: PHP/8.3.35
+Content-Length: 3
+Connection: close
+Content-Type: text/html; charset=UTF-8
+
+OK
+```
+
+A diferencia de `curl -I`, que solicita únicamente las cabeceras mediante el método HEAD, `curl -i` realiza una solicitud GET y muestra tanto las cabeceras como el cuerpo de la respuesta.
+
+En este caso obtenemos el contenido `OK`, generado por la aplicación PHP.
+
+La cabecera `Content-Length: 3` indica que el cuerpo contiene tres bytes, correspondientes a `OK` seguido de un salto de línea.
+
+**Esta prueba confirma que el servidor responde a solicitudes GET y entrega contenido desde el recurso solicitado.** No permite determinar qué configuración interna utiliza PHP.
+
+#### 3. Comprobar el procesamiento de formularios
+
+Las vulnerabilidades PHP2Shell están relacionadas con operaciones internas del intérprete durante el procesamiento de solicitudes HTTP.
+
+Para comprobar cómo responde el servidor ante un formulario `multipart/form-data`, creamos primero un archivo de prueba:
+
+```bash
+echo test > /tmp/t.txt
+```
+
+Después enviamos una solicitud que incluye dos campos y un archivo:
+
+```bash
+curl -i \
+  -F PHP_SESSION_UPLOAD_PROGRESS=lab \
+  -F field=1 \
+  -F f=@/tmp/t.txt \
+  http://192.168.18.68:8083/
+```
+
+**Salida obtenida:**
+
+```http
+HTTP/1.1 200 OK
+Date: Tue, 10 Nov 2026 18:31:08 GMT
+Server: Apache/2.4.69 (Debian)
+X-Powered-By: PHP/8.3.35
+Content-Length: 3
+Connection: close
+Content-Type: text/html; charset=UTF-8
+```
+
+El parámetro `-F` permite construir una solicitud HTTP utilizando `multipart/form-data`.
+
+En esta prueba enviamos:
+
+- `PHP_SESSION_UPLOAD_PROGRESS=lab`: un campo relacionado con el mecanismo de seguimiento de cargas de archivos de PHP.
+- `field=1`: un campo convencional del formulario.
+- `f=@/tmp/t.txt`: un archivo adjunto.
+
+El servidor responde con `200 OK`.
+
+Esto confirma que el servidor recibió la solicitud y generó una respuesta satisfactoria. Sin embargo, **no podemos determinar mediante esta respuesta si PHP procesó internamente todos los campos ni si se ejecutó el mecanismo de seguimiento de archivos**.
+
+Tampoco demuestra que exista una vulnerabilidad explotable.
+
+#### 4. Interpretación de los resultados
+
+Las tres pruebas proporcionaron información inicial sobre nuestro objetivo:
+
+| Comprobación                    | Resultado obtenido        |
+| ------------------------------- | ------------------------- |
+| Disponibilidad HTTP             | `200 OK`                  |
+| Servidor web anunciado          | Apache 2.4.69 (Debian)    |
+| Versión PHP anunciada           | 8.3.35                    |
+| Solicitudes GET y HEAD          | Respuestas satisfactorias |
+| Solicitud `multipart/form-data` | Respuesta HTTP 200        |
+| Ejecución remota de comandos    | No evaluada               |
+
+**¿Qué utilidad tiene esta información para el laboratorio?**
+
+Identificamos una versión de PHP que pertenece al rango afectado por PHP2Shell y comprobamos que el servidor responde a solicitudes HTTP convencionales y a un formulario multipart.
+
+No obstante, todavía no sabemos si podemos provocar el comportamiento vulnerable ni conseguir ejecutar comandos.
+
+Estas comprobaciones constituyen una etapa inicial de reconocimiento. La detección de la vulnerabilidad y la verificación de su posible explotación requieren pruebas adicionales.
+
+
+
+
+
+
+
+
 
 ## Laboratorio 1 — WordPress con PHP 8.3.33
 
