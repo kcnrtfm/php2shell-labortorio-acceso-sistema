@@ -414,7 +414,132 @@ Estas comprobaciones constituyen una etapa inicial de reconocimiento. La detecci
 
 
 
+#### Verificación de ejecución remota de comandos (RCE)
 
+En la prueba anterior, el escáner de RedSideSecurity identificó un comportamiento vulnerable durante el procesamiento de solicitudes HTTP `multipart/form-data`.
+
+Sin embargo, provocar un error de memoria no significa necesariamente que podamos ejecutar comandos en el servidor.
+
+Para comprobar si la vulnerabilidad puede explotarse, utilizaremos `p2s.py`, una herramienta del mismo repositorio que implementa una prueba de ejecución remota de comandos mediante la medición del tiempo de respuesta HTTP.
+
+##### Ejecución de la prueba
+
+Desde el directorio del repositorio original, ejecutamos:
+
+```bash
+python3 p2s.py -u http://192.168.18.68:8083/ --no-poc
+```
+
+El parámetro `-u` indica la dirección del objetivo, mientras que `--no-poc` solicita realizar únicamente la comprobación temporal, sin generar un archivo de prueba en el servidor.
+
+**Salida obtenida:**
+
+```text
+[1] fingerprint: X-Powered-By: PHP/8.3.35 -> version=8.3.35
+[2] offsets: 2 candidate build(s); htdata swept +-2 page(s)
+[3] try official php:8.3-apache (debian trixie): zif=0x3ac080 dtor=0x49ec50 htdata=0x6a0d8 ... RCE CONFIRMED (delay 8.3s >= 7s)
+
+[+] DONE: RCE confirmed on official php:8.3-apache (debian trixie) (blind timing only, no artifacts).
+    offsets: --zif-offset 0x3ac080 --dtor-offset 0x49ec50 --htdata-offset 0x6a0d8
+```
+
+La herramienta informa que consiguió confirmar ejecución remota de comandos mediante una demora de 8,3 segundos.
+
+##### ¿Cómo funciona técnicamente esta prueba?
+
+**Identificación del intérprete PHP**
+
+La primera operación consiste en identificar la versión de PHP que utiliza el servidor.
+
+```text
+[1] fingerprint: X-Powered-By: PHP/8.3.35 -> version=8.3.35
+```
+
+La herramienta obtiene esta información mediante la cabecera HTTP `X-Powered-By`.
+
+Conocer la versión permite seleccionar las compilaciones candidatas que el programa tiene registradas en su base de datos.
+
+**Selección de offsets de memoria**
+
+La segunda etapa consiste en identificar posiciones relativas de estructuras y funciones internas de PHP.
+
+```text
+[2] offsets: 2 candidate build(s); htdata swept +-2 page(s)
+```
+
+Un *offset* es un desplazamiento respecto de una dirección base de memoria.
+
+En este caso, la herramienta necesita tres valores:
+
+| Parámetro | Función                                                      |
+| --------- | ------------------------------------------------------------ |
+| `zif`     | Desplazamiento asociado a la función interna que se intenta invocar durante la explotación. |
+| `dtor`    | Desplazamiento relacionado con la función destructora utilizada en la manipulación de estructuras internas. |
+| `htdata`  | Desplazamiento asociado a datos internos utilizados para construir la estructura de memoria necesaria para el ataque. |
+
+Estos valores dependen de la compilación de PHP. No necesariamente coinciden entre diferentes versiones, distribuciones o compilaciones del intérprete.
+
+Además, el programa contempla variaciones de `htdata` mediante un barrido de páginas de memoria.
+
+Esto resulta importante porque las posiciones y la disposición de las estructuras internas pueden variar entre compilaciones.
+
+**Explotación y comprobación temporal**
+
+La tercera etapa utiliza la información anterior para intentar aprovechar el error de administración de memoria.
+
+Según la documentación de RedSideSecurity, la cadena de explotación busca manipular una estructura interna de PHP denominada `HashTable`, alterando una referencia a una función utilizada durante su destrucción.
+
+Si la manipulación funciona, el intérprete puede terminar invocando una función distinta de la prevista, permitiendo ejecutar un comando del sistema operativo.
+
+Para comprobarlo, la herramienta utiliza:
+
+```bash
+sleep 8
+```
+
+Este comando suspende su ejecución durante ocho segundos.
+
+En lugar de solicitar la salida de un comando o crear un archivo, la prueba mide cuánto tarda el servidor en responder.
+
+Si la explotación funciona y el comando se ejecuta, debería observarse una demora cercana a ocho segundos.
+
+Esta técnica se denomina **ejecución ciega basada en tiempo (*blind time-based execution*)**.
+
+##### Interpretación de los resultados
+
+La salida más importante es:
+
+```text
+RCE CONFIRMED (delay 8.3s >= 7s)
+```
+
+La herramienta registró una demora de 8,3 segundos y la comparó con su umbral de confirmación de 7 segundos.
+
+El resultado es compatible con la ejecución del comando `sleep 8` utilizado por la prueba.
+
+Además, el programa identificó una combinación de offsets que permitió completar el procedimiento:
+
+```text
+zif=0x3ac080
+dtor=0x49ec50
+htdata=0x6a0d8
+```
+
+Estos valores corresponden a la compilación oficial de PHP 8.3 sobre Debian Trixie registrada por RedSideSecurity.
+
+A diferencia del escáner, que únicamente observaba un error de memoria, esta prueba intenta demostrar que es posible alterar el comportamiento del intérprete hasta conseguir la ejecución de un comando.
+
+La confirmación se basa en la medición temporal, no en la recuperación de la salida del comando.
+
+##### Conclusión de la prueba
+
+El procedimiento permitió avanzar desde la detección de un comportamiento vulnerable hasta una **confirmación de RCE mediante una prueba temporal**, según los criterios implementados por `p2s.py`.
+
+La herramienta identificó PHP 8.3.35, seleccionó una combinación de offsets compatible con la compilación del servidor y registró una demora de 8,3 segundos al intentar ejecutar `sleep 8`.
+
+Esta prueba no generó archivos ni recuperó información del sistema operativo. Por lo tanto, aunque el resultado constituye una evidencia de ejecución, todavía no hemos demostrado mediante esta experiencia que podamos obtener la salida de otros comandos.
+
+El resultado coincide con el comportamiento que RedSideSecurity documenta para PHP 8.3.35 y permite comprender la diferencia entre **detectar una vulnerabilidad y demostrar que puede aprovecharse para ejecutar código**.
 
 
 
